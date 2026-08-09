@@ -1,0 +1,126 @@
+# mqtt-atmowx-bridge — example configuration
+#
+# Copy to config.yaml and edit. `${VAR}` reads from the environment (see
+# .env.example); `${VAR:-fallback}` supplies a default. Run
+# `mqtt-atmowx-bridge validate` to see exactly how your mappings resolve, and
+# `mqtt-atmowx-bridge fields` to list every publishable field and the units it
+# accepts.
+
+# The station record every observation points at. Create it once with:
+#   mqtt-atmowx-bridge station create --name "Backyard" --lat 45.55 --lon -122.67 \
+#     --elevation 61 --timezone America/Los_Angeles
+station: "${STATION_URI}"
+
+atproto:
+  service: "${ATP_SERVICE:-https://bsky.social}"
+  identifier: "${ATP_IDENTIFIER}"
+  # An app password (Settings -> App Passwords), never your account password.
+  password: "${ATP_APP_PASSWORD}"
+  # Tokens are cached here so a restart does not need to log in again. The file
+  # is written 0600; mount it on a volume that survives container restarts.
+  sessionFile: "${ATP_SESSION_FILE:-./data/session.json}"
+  # Renew the access token this long before it expires.
+  refreshSkewSeconds: 300
+
+mqtt:
+  url: "${MQTT_URL:-mqtt://localhost:1883}"
+  username: "${MQTT_USERNAME:-}"
+  password: "${MQTT_PASSWORD:-}"
+  clientId: "mqtt-atmowx-bridge"
+  qos: 0
+  keepaliveSeconds: 60
+  reconnectPeriodSeconds: 5
+  # For mqtts:// brokers with a private CA:
+  # tls:
+  #   ca: /etc/ssl/certs/broker-ca.pem
+  #   rejectUnauthorized: true
+
+publish:
+  # `interval` snapshots the current readings on a timer. `onMessage` publishes
+  # when a source marked `trigger: true` reports, throttled to
+  # minIntervalSeconds.
+  mode: interval
+  intervalSeconds: 300
+  alignToInterval: true
+  # A reading older than this is left out of the record rather than published
+  # as if it were current — that is how a dead sensor disappears instead of
+  # flatlining.
+  maxReadingAgeSeconds: 900
+  minFields: 1
+  # `message` stamps the record with the payload's own timestamp when a source
+  # provides one; `received` always uses arrival time.
+  timestampSource: message
+  # Record keys are derived from the rounded observation time, so this must not
+  # exceed the publish interval or records would overwrite each other.
+  roundToSeconds: 60
+  # Set true to build and log records without writing anything.
+  dryRun: false
+  queueSize: 100
+
+# Values computed rather than measured. `whenMissing` only fills a gap; `always`
+# overrides whatever arrived. Both default to `never`.
+derive:
+  dewPoint: whenMissing
+  # pressureSeaLevel: whenMissing
+  # elevationMeters: 61
+
+health:
+  enabled: true
+  port: 8080
+
+log:
+  level: info
+  pretty: false
+
+sources:
+  # --- One JSON payload carrying the whole observation ----------------------
+  # Typical of an Ambient Weather / Ecowitt console bridged to MQTT, weewx's
+  # MQTT uploader, or a Home Assistant MQTT state topic.
+  - topic: "weather/station/loop"
+    payload: json
+    # The console's own clock, so records are stamped when measured rather than
+    # when they reached the broker. Drop this block to use arrival time.
+    timestamp:
+      path: dateutc
+      format: epochMillis
+    map:
+      tempf: { field: temperature, unit: fahrenheit }
+      humidity: { field: relativeHumidity, unit: percent }
+      baromabsin: { field: pressureStation, unit: inHg }
+      baromrelin: { field: pressureSeaLevel, unit: inHg }
+      windspeedmph: { field: wind.speed, unit: mph }
+      windgustmph: { field: wind.gust, unit: mph }
+      winddir: { field: wind.direction, unit: degrees }
+      hourlyrainin: { field: precipitation.hour, unit: inches }
+      dailyrainin: { field: precipitation.day, unit: inches }
+      rainratein: { field: precipitation.rate, unit: inchesPerHour }
+      solarradiation: { field: solarIrradiance, unit: wattsPerSquareMeter }
+      uv: { field: uvIndex }
+      pm25: { field: airQuality.pm25, unit: ugm3 }
+      # Anything the lexicon has no field for rides along in `extra`:
+      leafwetness: { field: "extra:leafWetness", unit: percent, decimals: 0 }
+
+  # --- One value per topic ---------------------------------------------------
+  # Bare numeric payloads, the way most DIY sensors publish.
+  # - topic: "home/backyard/temperature"
+  #   field: temperature
+  #   unit: celsius
+  #
+  # - topic: "home/backyard/humidity"
+  #   field: relativeHumidity
+  #   unit: percent
+  #
+  # A payload like "21.4 °C" needs `payload: text`, which pulls out the number:
+  # - topic: "home/backyard/temp_text"
+  #   payload: text
+  #   field: temperature
+  #   unit: celsius
+  #
+  # Calibration is applied before unit conversion, so a sensor publishing
+  # tenths of a degree with a known bias becomes:
+  # - topic: "sensors/probe/raw"
+  #   field: temperature
+  #   unit: celsius
+  #   multiplier: 0.1
+  #   offset: -0.4
+  #   ignoreAbove: 60      # obvious sensor faults never reach a record
