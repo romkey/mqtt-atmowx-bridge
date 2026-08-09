@@ -222,12 +222,13 @@ class TestEndToEnd:
         bridge.start()
         try:
             assert bridge.wait_until_connected(10)
-            assert broker.wait_for_subscription(5)
+            assert broker.wait_for_subscriptions(("sensors/rain", "sensors/temp"), 10)
 
             # Rain arrives on its own topic and does not trigger a publish.
             broker.publish("sensors/rain", "0.5")
             assert wait_for(lambda: bridge.collector.size == 1)
             broker.publish("sensors/temp", "68.0")
+            assert wait_for(lambda: bridge.collector.size == 2)
 
             assert wait_for(lambda: pds.calls_to(PUT))
         finally:

@@ -138,12 +138,20 @@ class MqttBridgeClient:
         self._connected.set()
         self._log.info("connected to the MQTT broker", url=self._config.mqtt.url)
 
-        for topic in self._config.topics:
-            result, _ = client.subscribe(topic, qos=self._config.mqtt.qos)
+        if self._config.topics:
+            # One SUBSCRIBE with every filter. Issuing them one at a time leaves a
+            # window where a message on a later topic arrives unsubscribed.
+            filters = [(topic, self._config.mqtt.qos) for topic in self._config.topics]
+            result, _ = client.subscribe(filters)
             if result == mqtt.MQTT_ERR_SUCCESS:
-                self._log.info("subscribed", topic=topic, qos=self._config.mqtt.qos)
+                for topic in self._config.topics:
+                    self._log.info("subscribed", topic=topic, qos=self._config.mqtt.qos)
             else:
-                self._log.error("subscribe failed", topic=topic, error=mqtt.error_string(result))
+                self._log.error(
+                    "subscribe failed",
+                    topics=list(self._config.topics),
+                    error=mqtt.error_string(result),
+                )
 
     def _handle_disconnect(
         self,

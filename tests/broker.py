@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import socket
 import threading
+import time
 from dataclasses import dataclass, field
 
 CONNECT = 1
@@ -73,6 +74,24 @@ class MqttTestBroker:
 
     def wait_for_subscription(self, timeout: float = 5.0) -> bool:
         return self._subscribed.wait(timeout)
+
+    def wait_for_subscriptions(self, topics: tuple[str, ...], timeout: float = 5.0) -> bool:
+        """Wait until the client has subscribed to every listed filter."""
+        required = set(topics)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if required.issubset(self.subscribed_topics):
+                return True
+            time.sleep(0.02)
+        return False
+
+    @property
+    def subscribed_topics(self) -> set[str]:
+        with self._lock:
+            topics: set[str] = set()
+            for client in self._clients:
+                topics.update(client.subscriptions)
+            return topics
 
     def publish(self, topic: str, payload: str | bytes, retain: bool = False) -> None:
         """Deliver a message to every client subscribed to a matching filter."""
