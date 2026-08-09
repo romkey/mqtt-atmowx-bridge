@@ -141,7 +141,9 @@ class MqttBridgeClient:
         if self._config.topics:
             # One SUBSCRIBE with every filter. Issuing them one at a time leaves a
             # window where a message on a later topic arrives unsubscribed.
-            filters = [(topic, self._config.mqtt.qos) for topic in self._config.topics]
+            filters: list[tuple[str, int]] = [
+                (topic, self._config.mqtt.qos) for topic in self._config.topics
+            ]
             result, _ = client.subscribe(filters)
             if result == mqtt.MQTT_ERR_SUCCESS:
                 for topic in self._config.topics:
