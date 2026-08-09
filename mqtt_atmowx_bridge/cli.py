@@ -111,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     station_create.add_argument("--kind", choices=KINDS)
     station_create.add_argument("--status", choices=STATUSES)
     station_create.add_argument("--hardware", help='e.g. "Ambient Weather WS-2902"')
-    station_create.add_argument("--software", help='e.g. "mqtt-atmowx-bridge 0.1.0"')
+    station_create.add_argument("--software", help='e.g. "mqtt-atmowx-bridge 0.1.1"')
     station_create.add_argument("--timezone", help='IANA zone, e.g. "America/Los_Angeles"')
     station_create.set_defaults(handler=command_station_create)
 

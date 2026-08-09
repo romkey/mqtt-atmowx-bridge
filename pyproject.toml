@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mqtt-atmowx-bridge"
-version = "0.1.0"
+version = "0.1.1"
 description = "Publish weather observations from MQTT to the AT Protocol as net.atmowx.observation records"
 readme = "README.md"
 license = { file = "LICENSE" }

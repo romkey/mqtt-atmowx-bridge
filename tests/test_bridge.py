@@ -11,6 +11,7 @@ import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -304,6 +305,7 @@ class TestEndToEnd:
             assert broker.wait_for_subscription(5)
 
             broker.publish("weather/outdoor", ambient_payload())
+            assert wait_for(lambda: bridge.collector.size > 0)
             assert wait_for(lambda: pds.calls_to(PUT))
 
             broker.publish("weather/outdoor", ambient_payload(tempf=70.0))
@@ -330,6 +332,28 @@ class TestEndToEnd:
         assert status["mqtt"]["messages_received"] >= 1
         assert status["publisher"]["published"] == 1
         assert status["collector"]["readings"] == 8
+
+
+class TestOnMessageThrottle:
+    def test_the_first_publish_is_not_throttled(self, broker: MqttTestBroker, pds: FakePds) -> None:
+        bridge = make_bridge(broker, pds, publish={"minIntervalSeconds": 3600})
+
+        assert bridge._last_published_at is None
+        # A host whose monotonic clock is still small used to look "recently
+        # published" when _last_published_at was 0.0, sleeping for hours.
+        assert bridge._seconds_since_last_publish() == float("inf")
+
+    def test_subsequent_publishes_honour_the_minimum_interval(
+        self, broker: MqttTestBroker, pds: FakePds
+    ) -> None:
+        bridge = make_bridge(broker, pds, publish={"minIntervalSeconds": 3600})
+        bridge._last_published_at = 1000.0
+
+        with patch("mqtt_atmowx_bridge.bridge.bridge.time.monotonic", return_value=1500.0):
+            assert bridge._seconds_since_last_publish() == 500.0
+
+        with patch("mqtt_atmowx_bridge.bridge.bridge.time.monotonic", return_value=5000.0):
+            assert bridge._seconds_since_last_publish() == 4000.0
 
 
 class TestDryRun:

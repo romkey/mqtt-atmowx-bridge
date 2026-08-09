@@ -54,7 +54,7 @@ class Bridge:
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
         self._pending_trigger = False
-        self._last_published_at = 0.0
+        self._last_published_at: float | None = None
         self._last_signature: str | None = None
         self._started_at = datetime.now(UTC)
         self._observations_built = 0
@@ -132,17 +132,28 @@ class Bridge:
         minimum = self._config.publish.min_interval_seconds
         while not self._stopping.is_set():
             if self._pending_trigger:
-                waited = time.monotonic() - self._last_published_at
-                if waited >= minimum:
+                elapsed = self._seconds_since_last_publish()
+                if elapsed >= minimum:
                     self._pending_trigger = False
                     self._publish_once("trigger")
                     continue
-                timeout: float | None = minimum - waited
+                timeout: float | None = minimum - elapsed
             else:
                 timeout = None
 
             self._wake.wait(timeout)
             self._wake.clear()
+
+    def _seconds_since_last_publish(self) -> float:
+        """Monotonic seconds since the last publish, or infinity if there has not been one.
+
+        Using ``0.0`` as a sentinel breaks on fresh hosts: ``monotonic() - 0`` can be
+        less than ``minIntervalSeconds``, so the first trigger would sleep for nearly
+        the full interval instead of publishing immediately.
+        """
+        if self._last_published_at is None:
+            return float("inf")
+        return time.monotonic() - self._last_published_at
 
     def _seconds_until_next(self, interval: int) -> float:
         now = time.time()
